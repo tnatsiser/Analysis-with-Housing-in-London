@@ -1,0 +1,451 @@
+
+---
+title: "Analysis with Housing in London"
+author: "Xingxing"
+date: "2022/2/5"
+output:
+  html_document:
+    number_sections: yes
+    toc: yes
+    df_print: paged
+  pdf_document:
+    latex_engine: xelatex
+    number_sections: yes
+    toc: yes
+---
+<style type="text/css">
+    #header {
+        text-align: center;
+        font-size: 24pt;
+    }
+    #body{
+        font-family: times;
+        font-size: 20pt;
+    }
+</style>
+
+
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.width = 8, fig.height = 6, fig.align = 'center', fig.path = '/Final_Pic')
+```
+
+# Introduction
+This whole project is to explore the trend of house prices in London over the years and analyze the reasons behind it. In this paper, I focus on the average house prices and the number of houses sold in different areas of London, including compare the average houses prices and the number of houses sold in different boroughs of London, compare the average house prices prices between London and England, and explore the factors that affect them the most. 
+Why do I study house prices in London?
+On account of the intention to take up a job and settle in London. And rent is one of the biggest factor affecting my personal financial income.
+
+# Data set
+The datasets both are come from Kaggle (https://www.kaggle.com/justinas/housing-in-london)—a dataset sharing site, and include "housing_in_london_monthly_variables.xls" and "housing_in_london_yearly_variables.xls". They are primarily centered around the housing market of London and some relevant data. *More information about datasets will be listed at chapter3.2.
+
+# Data Processing
+The main work in this stage is to import some necessary libraries, import data, check the features of datasets and process the missing values, and create some interesting subsets of data. 
+
+## Import library
+```{r message=FALSE}
+library(tidyverse)
+library(knitr)
+library(ggplot2)
+library(ggthemes)
+library(gganimate)
+library(gghighlight)
+library(geofacet)
+library(stringr)
+library(dplyr)
+library(DataExplorer)
+library(lubridate)
+library(viridis)
+library(PerformanceAnalytics)
+library(mice)
+library(DescTools)
+library(naniar)
+library(scales)
+library(reshape)
+library(shiny)
+library(htmlwidgets)
+library(plotly)
+library(gplots)
+library(gcookbook)
+library(RColorBrewer)
+library(png)
+library(grid)
+```
+
+## Import Data
+There are two data frame, "london_month" data and "london_year" data.
+```{r, message=FALSE}
+london_month <- read_csv("./housing_in_london_monthly_variables.csv")
+london_year <- read_csv("./housing_in_london_yearly_variables.csv")
+```
+```{r}
+#take a quick look
+head(london_month)
+head(london_year)
+```
+
+The total number of observations and attributes for both the london_month data and london_year data.
+```{r}
+dim(london_month)
+dim(london_year)
+```
+
+Descriptions of variables in london_month data.
+```{r}
+colnames(london_month)
+```
+<center>Table1. variables in london_month data</center>
+
+|         variables          |                descriptions              |
+|----------------------------|------------------------------------------|
+|area                        |Include London and areas around London    |
+|average_price               |Monthly average house prices              |
+|houses_sold                 |Monthly number of houses sold             |
+|no_of_crimes                |Monthly number of crimes committed        |
+|borough_flag                |The area belongs to London:1;Otherwise:0  |
+
+Descriptions of variables in london_year data.
+```{r}
+colnames(london_year)
+```
+<center>Table2. variables in london_year data</center>
+
+|             variables              |                     descriptions                   |
+|------------------------------------|----------------------------------------------------|
+|area                                |Include London and areas around London              |
+|median_salary                       |Yearly median salary of the residents of the area   |
+|life_satisfaction                   |Yearly life satisfaction                            |
+|mean_salary                         |Yearly mean salary of the residents of the area     |
+|recycling_pct                       |Yearly percentage of households that recycle        |
+|population_size                     |Yearly number of people living in the area          |
+|number_of_jobs                      |Yearly number of jobs                               |
+|no_of_houses                        |Yearly number of houses                             |
+
+This statistics pertaining of london_month and london_year. London_month data has data available from `r min(london_month$date)` to `r max(london_month$date)`. And London_month data has data available from `r min(london_year$date)` to `r max(london_year$date)`. 
+```{r}
+summary(london_month)
+summary(london_year)
+```
+
+In london_month data, the total number of regions is forty-five, and there is a discrepancy in the number of observations in some areas. However, there is no difference of observations in london_year data.
+```{r}
+data.frame(table(london_month$area))
+data.frame(table(london_year$area))
+```
+
+## Missing Value
+The bar chart significantly shows magnitude of the missing values for each attribute in london_month data and london_year data. We can find that the attribute "no_of_crimes" has a large number of missing values (NAN) compare with other attributes. In the london_year data, the severity of missing values on the attribute "life_satisfaction" is the most. However, it is impossible to compare the severity of missing values between london_month data and london_year date due to the different in total number of data.
+```{r fig.height = 4, fig.width = 6}
+gg_miss_var(london_month)
+gg_miss_var(london_year)
+```
+
+There is another way to visualize the distribution of missing values. The figures show the proportion of missing values and their distribution. It is worth noting that the percentage of missing values of the attribute "no_of_crimes" in london_month data is about 45.1%. And the percentage of missing values of the attribute "life_satisfaction" in london_year data is more than 50%. Moreover, the percentage of missing values in london_year data is worse than the percentage the missing values in london_month data.
+```{r}
+PlotMiss(london_month)
+PlotMiss(london_year)
+```
+
+## Deal with Missing Values
+The attributes with large missing percentages are replaced by using the mean value, while the rest attributes with small missing percentages are removed.
+In london_month data, this missing values of the attribute "no_of_crimes" is replaced by the mean value. However, the missing values of the attribute "houses_sold" is be deleted due to its low percentage of missing values. 
+The same methods are applied to london_year data, but it is important to note that considering the attribute "recycling_pct" and "number_of_jobs" change a lot over time (the data gap between each month is large and irregular), their missing values are removed.
+```{r}
+df_m <- london_month
+df_y <- london_year
+
+# replace character "-" and "#" with NaN
+df_y <- replace_with_na(df_y, replace = list(mean_salary = c('-','#')))
+
+# deal with london_month data
+# fill in missing values of the attribute "no_of_crimes" with mean value
+df_m$no_of_crimes[is.na(df_m$no_of_crimes)] <- median(df_m$no_of_crimes, na.rm = TRUE)
+
+# drop missing values of the attribute "houses_sold"
+df_m <- na.omit(df_m)
+
+# deal with london_year data
+# fill in missing values of the attributes "life_satisfaction", "no_of_houses", and "area_size"
+df_y$life_satisfaction[is.na(df_y$life_satisfaction)] <- median(df_y$life_satisfaction, na.rm = TRUE)
+df_y$no_of_houses[is.na(df_y$no_of_houses)] <- median(df_y$no_of_houses, na.rm = TRUE)
+df_y$area_size[is.na(df_y$area_size)] <- median(df_y$area_size, na.rm = TRUE)
+
+# drop missing values with rest attributes
+df_y <- na.omit(df_y)
+
+# count number of missing values 
+table(is.na(df_m))
+table(is.na(df_y))
+```
+
+## Create some interesting dataset cuts
+The dataset cuts for comparing average monthly house prices between London and England, comparing average monthly house prices or houses sold in each regions in London or in England, and so on.
+
+### Datasets of housing price in London and England
+Prepare the dataset cuts of house prices in London and hous prices in England. And aggregate these two dataset cuts. 
+```{r}
+# Create dataset cuts
+prices_london <- df_m %>% filter(borough_flag == 1)
+prices_england <- df_m %>% filter(area == 'england')
+
+# Calculate mean average price for the above cuts of data
+london_mean_price <- prices_london %>% group_by(date) %>% summarise(london_mean_price = mean(average_price, na.rm = TRUE))
+england_mean_price <- prices_england %>% group_by(date) %>% summarise(england_mean_price = mean(average_price, na.rm = TRUE))
+
+# melt two datasets
+df_melt <- melt(list(London = london_mean_price, England = england_mean_price), id.vars = "date")
+```
+
+### Dataset of regions in England
+The dataset cut that only contains regions in England.
+```{r}
+# isolate region in England
+df <- df_m %>% filter(borough_flag == 0) %>% distinct()
+unique(df$area)
+```
+
+So, we create a list of regions in England.
+```{r}
+eng_regions = c("south east", "north east", "north west", "yorks and the humber", "east midlands", "west midlands", "east of england", "south west")
+
+# create a dataframe includes all regions in England
+england_with_reg <- df_m %>% group_by(date) %>% filter(area %in% eng_regions)
+```
+
+# Data Exploration
+
+## London vs England in Average Price
+
+```{r fig.height = 4, fig.width = 6}
+
+p <- ggplot(df_melt, aes(date, value, colour = L1)) + geom_line() + labs(title = "Average Monthly House Price") + scale_colour_manual("Area", values = c("London" = "orange", "England" = "green")) + scale_y_continuous("Average housing price(£)",labels = unit_format(unit = "k", scale = 1e-3)) + scale_x_date(date_breaks = "4 years", date_minor_breaks =  "2 years", date_labels = "%Y")
+p <- p + annotate("rect", xmin = as.Date(0,origin = '2007-12-01'), xmax = as.Date(0,origin = '2009-06-01'), ymin = 0, ymax = max(df_melt$value * 1.2), alpha = .4, fill = "yellow")
+p <- p + annotate("text", x = as.Date('2008-09-01'), y = max(df_melt$value) * 0.82, label = "The Great Recession", angle = 90, size = 5)
+p <- p + geom_vline(xintercept = as.Date('2016-06-01'), linetype = 2, color = "blue") + annotate("text", x = as.Date('2017-02-01'), y = max(df_melt$value) * 0.75, label = "Brexit Vote", angle = 90, size = 5)
+
+p
+```
+
+### Results Analysis
+Overall, the average house prices in London and England has been rising from 1995 to 2020. But, the average house prices in London has been higher than the average house prices in England over the years. There are two large fluctuations of house prices occurred in around 2007 and 2016. According to the survey, the UK property market fell fast and far when the Great Recession occurred in 2007, rippling out from a subprime US mortgage market which was stuffed full of risky loans (the Great Recession occurred from 2007 to 2009). This is the reason for the first big drop in house prices. After a temporary lull, average home prices rose again until around 2016, when there was a small fluctuation (the acceleration of growth slowed down, but still rose). The Brexit Vote 2016 didn't have much of an impact on average house prices in London, although the average house price trend was somewhat flat.
+
+## Top7 Average House Price in London
+According to survey, properties in London had an overall average price of £675,272 over 2020. Therefore, I consider to pick out the price trends in areas where the average price exceeds 0.6M(7 areas) and compared them. 
+
+```{r}
+# sort the average price in each borough and rank the top7 areas.
+price_ld <- prices_london %>% group_by(area) %>% summarise(average_price = mean(average_price))
+price_ld <- price_ld[order(-price_ld$average_price),]
+head(price_ld, n = 7)
+```
+
+Use plotly to show the figure, the line can be hided by clicking the corresponding legend.
+```{r fig.height = 4, fig.width = 6}
+# use plotly to show the whole lines
+p <- ggplot(prices_london, aes(x = date, y = average_price, color = area)) + geom_line() + labs(title = "Average Monthly London House Price by Area Trend") + scale_y_continuous("Average housing price(£)",labels = unit_format(unit = "k", scale = 1e-3)) + scale_x_date(date_breaks = "4 years", date_minor_breaks =  "2 years", date_labels = "%Y")
+
+plotly_build(p)
+```
+
+We can use shinyApp to observe the interesting data by selected input. However, shiny app is not allowed run in rmarkdown.
+```{r}
+# use shiny to select top 7 average price by areas
+shinyApp(
+  
+  ui <- fluidPage(
+  titlePanel("Areas"),
+  sidebarLayout(
+    sidebarPanel(
+      selectInput("areas", "Areas", choices = unique(prices_london$area), selected = "", multiple = TRUE)
+    ),
+    mainPanel(
+      plotOutput("plot")
+      )
+    )
+  ),
+  
+  server <- function(input, output, session){
+    output$plot <- renderPlot({
+      data <- filter(prices_london, area %in% input$areas)
+      ggplot(data, aes_string(x = "date", y = data$average_price, colour = "area")) +
+        geom_line() + 
+        labs(title = "Average Monthly London House Pirce by Borough")
+      })
+},
+
+options(list(height = 500))
+
+)
+```
+
+### Results Analysis
+The results show that Kensington and Chelsea have the most fluctuating average house prices, but its average house price has been historically expensive. The next most expensive area is Westminster.
+
+## Top3 Average House Price in England
+The average house price trends of the top three areas in England were drawn and compared with the average house price trends of the boroughs with the lowest average house prices in London.
+
+```{r}
+price_eng <- england_with_reg %>% group_by(area) %>% summarise(average_price = mean(average_price))
+price_eng <- price_eng[order(-price_eng$average_price),]
+head(price_eng, n = 3)
+```
+
+Compare the average price between top3 regions in England with the bottom region in London.
+```{r fig.height = 4, fig.width = 6}
+# data of the top3 regions in England 
+eng_pr_top3 <- head(price_eng, n = 3)$area
+eng_pr_top3 <- england_with_reg %>% filter(area %in% eng_pr_top3)
+
+# filter data of the bottom region in London 
+f <- prices_london %>% filter(area %in% tail(price_ld$area,1)) 
+
+p <- ggplot() + aes(x = date, y = average_price, color = area) + geom_line(data = f, linetype = "dotted") +geom_line(data = eng_pr_top3) + labs(title = "Average Monthly England House Price by Area Trend") + scale_y_continuous("Average housing price(£)",labels = unit_format(unit = "k", scale = 1e-3)) + scale_x_date(date_breaks = "4 years", date_minor_breaks =  "2 years", date_labels = "%Y")
+
+plotly_build(p)
+```
+
+### Results Analysis
+The results show that the three most expensive areas in the England are all located in the South East of England and their average house price is about the same as the average house price in the area with the lowest average house price in London.
+
+##  Reasons Exploration
+There should be two maps here, one with a thumbnail view of the London areas, and the other with a thumbnail view of the England areas. I have tried many ways, but it still does not work.
+```{r　echo = FALSE}
+# failed.
+knitr::include_graphics("./R_Final-Project/london-map-slide1.png")
+knitr::include_graphics("./R_Final-Project/England_map.png")
+```
+
+After I searched and observed maps of London and England, I found that most valuation surveyors and estate agents agree that Prime Central London includes the City of Westminster and the Royal Borough of Kensington and Chelsea, and parts of the boroughs of Hammersmith and Fulham, and Camden. In addition to Prime Central London, Prime East London includes Islington, and Prime South West London includes Fulham. It can be inferred that the average house price is more exorbitant in areas close to the center of London, and in addition, in areas not close to London but still in the center, the average house price tends to be higher.
+In the England map, south of England, South East, East of England, these three areas are geographically close to London. It is found that the South East of England has more jobs and stronger competition, as well as higher cost of living compared to the North of England.
+
+## Houses Sold in London by Date
+Explore the factors influencing high house prices in London from another perspective.
+
+```{r}
+# get data cut
+houses_sold_london <- prices_london %>% group_by(date) %>% summarise(houses_sold = sum(houses_sold))
+```
+```{r fig.height = 4, fig.width = 6}
+# plot
+p <- ggplot(houses_sold_london, aes(date, houses_sold)) + geom_line(color = "black") + labs(title = "Houses Sold in London by Date") + scale_y_continuous("Houses Sold",labels = unit_format(unit = "k", scale = 1e-3)) + scale_x_date(date_breaks = "4 years", date_minor_breaks =  "2 years", date_labels = "%Y")
+p <- p + annotate("rect", xmin = as.Date(0,origin = '2007-12-21'), xmax = as.Date(0,origin = '2009-06-21'), ymin = 0, ymax = max(houses_sold_london$houses_sold * 1.2), alpha = .4, fill = "green")
+p <- p + annotate("text", x = as.Date('2008-09-01'), y = max(houses_sold_london$houses_sold) * 0.82, label = "The Great Recession", angle = 90, size = 5)
+p <- p +annotate("rect", xmin = as.Date(0,origin = '2016-01-01'), xmax = as.Date(0,origin = '2016-05-01'), ymin = 0, ymax = max(houses_sold_london$houses_sold * 1.2), alpha = .4, fill = "green")
+p <- p + annotate("text", x = as.Date('2016-08-01'), y = max(houses_sold_london$houses_sold) * 0.82, label = "New Tax Legislation", angle = 90, size = 5)
+
+p
+```
+
+### Results Analysis
+Prior to the Great Recession, the number of houses sold in London were increasing overall with regular peaks and dips. However, during the Great Depression, the number of houses sold in London fell sharply from about 17,000 to 4,000, and although it rebounded during the latter 13 years, it was still lower than the number of houses sold before the onset of the Great Depression (It appears that number of houses sold in London have not completely recovered since). Although the impact of the Great Recession on London's housing prices was not significant in terms of prices, it did take a greater toll on the London real estate market in terms of the number of houses sold. Moreover, there was a sudden spike in the number of houses sold in London in April 2016 on the account of the UK government introduced stamp duty to come into effect, and the surge in houses sold in March 2016 was a result of people trying to avoid paying more tax by completing the purchase of a house before the stamp duty increase.
+
+## Inner London vs Outer London
+Compare the trend in the real estate market in Inner and Outer London from two attributes: “Average_price” and “houses_sold”.
+
+Create the dataset cut: in_out_london.
+```{r}
+# get datasets cut
+in_out_london <- df_m %>% filter(area == "inner london" | area == "outer london")
+```
+
+### Compare house price between inner london and outer london
+
+```{r fig.height = 4, fig.width = 6}
+p <- ggplot(in_out_london , aes(date, average_price, colour = area)) + geom_line() + labs(title = "Average Monthly House Price - Inner & Outer London") + scale_y_continuous("Average housing price(£)",labels = unit_format(unit = "k", scale = 1e-3)) + scale_x_date(date_breaks = "4 years", date_minor_breaks =  "2 years", date_labels = "%Y")
+
+plotly_build(p)
+
+```
+
+### Compare houses sold between inner london and outer london
+```{r fig.height = 4, fig.width = 6}
+p <- ggplot(in_out_london , aes(date, houses_sold, colour = area)) + geom_line() + labs(title = "Houses Sold by Data - Inner & Outer London") + scale_y_continuous("Houses Sold",labels = unit_format(unit = "k", scale = 1e-3)) + scale_x_date(date_breaks = "4 years", date_minor_breaks =  "2 years", date_labels = "%Y")
+
+plotly_build(p)
+```
+
+### Results Analysis
+The Great Recession significantly affected not only the number of houses sold in Inner London, but also in Outer London. However, average house prices and number of houses sold in Inner London are consistently higher than those in Outer London, further evidence that location affects house prices (Average house prices are higher in London and in areas closer to London).
+
+# Correlation between all attributes
+Use heat map and scatter plot matrix to explore the relationship between each attribute in london_year data. Here, the correlation matrix is generated using the dataset without the missing values processing. 
+
+Here, we use london_year data to explore more information.
+```{r}
+# change type of dataframe from chr to dbl
+df_y$recycling_pct <- as.numeric(unlist(df_y$recycling_pct))
+df_y$mean_salary <- as.numeric(unlist(df_y$mean_salary))
+
+# delet attributes "date", "area", and "borough_flag"
+df_y2 <- df_y %>% select(median_salary, mean_salary, life_satisfaction, recycling_pct, population_size, number_of_jobs, area_size, no_of_houses)
+```
+
+## Heat map 
+
+```{r fig.height = 6, fig.width = 8}
+#heatmap
+c_maxtrix <- cor(df_y2)
+hM <- format(round(c_maxtrix, 2))
+coul <- colorRampPalette(brewer.pal(9, "YlGn"))(25)
+
+heatmap.2(c_maxtrix, trace = "none", col = coul, density.info = "none", key.xlab = "Correlation", key.title = "", cexRow = 1, cexCol = 1, Rowv = F, Colv = F, margins = c(6,6), cellnote = hM, notecol = "black")
+```
+
+The result shows that there is a strong correlation
+between any two attributes of “no_of_houses”, “population_size”, "number_of_jobs", and "area_size". Moreover, there is a high correlation between “median_salary” and “mean_salary”. 
+
+## Scatter Plot Matrix
+
+```{r}
+# show the correlation coefficient of each pair of variables 
+panel.cor <- function(x, y, digits = 2, prefix = "", cex.cor, ...) {
+  usr <- par("usr")
+  on.exit(par(usr))
+  par(usr = c(0, 1, 0, 1))
+  r <- abs(cor(x, y, use = "complete.obs"))
+  txt <- format(c(r, 0.123456789), digits = digits)[1]
+  txt <- paste(prefix, txt, sep = "")
+  if (missing(cex.cor)) cex.cor <- 0.8/strwidth(txt)
+  text(0.5, 0.5, txt, cex =  cex.cor * (1 + r) / 2)
+}
+# show histograms of each variables along the diagonal
+panel.hist <- function(x, ...) {
+  usr <- par("usr")
+  on.exit(par(usr))
+  par(usr = c(usr[1:2], 0, 1.5) )
+  h <- hist(x, plot = FALSE)
+  breaks <- h$breaks
+  nB <- length(breaks)
+  y <- h$counts
+  y <- y/max(y)
+  rect(breaks[-nB], 0, breaks[-1], y, col = "white", ...)
+}
+# create a scatter plot matrix
+pairs(
+  df_y2,
+  upper.panel = panel.cor,
+  diag.panel = panel.hist,
+  lower.panel = panel.smooth,
+  pch = "."
+)
+```
+
+The results show that “median_salary”- “mean_salary”, “population_size”- “number_of_jobs”, "number_of_houses" and "area_size" show a more obvious linear relationship (compared to the other graphs). Both graphs above show that average house prices appear to have the highest positive correlation with the median wages of residents in the district.
+
+# House Prices Prediction
+
+```{r fig.height = 6, fig.width = 6}
+df <- df_m %>% filter(area == "london")
+# create a time series
+df.ts <- ts(df[,3], start = c(1995,1), end = c(2019,11), frequency = 12)
+# decompose
+london_decompose <- decompose(df.ts)
+plot(london_decompose, col = "green", lwd = .8)
+```
+
+## Results Analysis
+According to the results of time series chart, it can be inferred that house prices in London will still rise after 2020. This is a summary of monthly house price inflation in the UK (https://www.ons.gov.uk/economy/inflationandpriceindices/bulletins/housepriceindex/november), reported by official for National Statistics, which shows that the average house price in the UK has increased by 10.0% over the year to November 2021, and London continues to be the region with the lowest annual growth rate. (Read the report to find more interesting and useful information!) However, this growth could start to tail off in 2022 due to stretched budgets and higher mortgage rates, according to the latest reports.
+
+# Conclusion
+The average house price in most London boroughs is higher than the average house price in
+England. While house prices in London and England were not greatly affected by the Great Recession, both the London and England real estate markets were hit hard according to the number of houses sold. The quantity of houses sold has rebounded in the latter 13 years (after 2009), but is still lower than it was before the Great Recession. Location affects home prices, with affluent boroughs such as Kensington and Westminster having the highest average housing prices. It is concluded that the main factors affecting the average house price in London is the financial prosperity of the corresponding borough which is reflected in the median salary of the residents, and the number of jobs.
+
+
